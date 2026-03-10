@@ -1,2 +1,323 @@
-# blueteamexpert
-this is a moe llm blueprint to have a assistent blue teaming expert for poor nations that cannot afford darktrace
+# SENTINEL-MoE
+### An Open-Source Mixture-of-Experts Threat Detection Framework for Resource-Constrained National CERTs
+
+> *"Darktrace-class APT detection for nations that cannot afford Darktrace."*
+
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Status: Architectural Design Phase](https://img.shields.io/badge/Status-Design%20Phase-yellow)]()
+[![Target: National CERTs](https://img.shields.io/badge/Target-National%20CERTs-green)]()
+[![Hardware: Consumer GPUs](https://img.shields.io/badge/Hardware-Consumer%20GPUs-orange)]()
+
+---
+
+## The Problem
+
+Advanced Persistent Threats (APTs) — state-sponsored hacker groups — do not limit their targets to wealthy nations. Bangladesh, Myanmar, Sri Lanka, Nepal, and dozens of African and Southeast Asian nations face the same threat actors as the US or UK, but with a fraction of the cybersecurity budget.
+
+Commercial solutions like Darktrace cost **$50,000–$200,000 per year**. For most national CERTs in the developing world, this is simply not an option.
+
+The result: millions of people whose government infrastructure, hospitals, and financial systems are effectively undefended against nation-state level attacks.
+
+**SENTINEL-MoE is a free, open-source, locally-deployable alternative.**
+
+---
+
+## What This Is
+
+SENTINEL-MoE is a tiered multi-agent AI system that combines multiple open-source Large Language Models (LLMs) in a Mixture-of-Experts (MoE) architecture to provide:
+
+- Real-time network threat detection and MITRE ATT&CK mapping
+- APT-level behavioral anomaly detection
+- Multilingual threat intelligence (Russian, Chinese, Arabic dark web forums)
+- YARA/Sigma rule auto-generation from malware samples
+- Automated incident response playbooks
+- Full data sovereignty — runs completely air-gapped, no data leaves your borders
+
+**Software cost: ₹0.** Everything used is open-source.
+
+---
+
+## Architecture Overview
+
+SENTINEL-MoE uses a **tiered escalation design** — the most expensive models only activate when cheaper ones confirm a genuine threat. This is how the system runs on budget hardware without sacrificing detection quality.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    RAW EVENT STREAM                      │
+│         (Logs, NetFlow, EDR, SIEM, Syslog)              │
+└─────────────────────┬───────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│              TIER 0 — IMMUNE MEMBRANE                   │
+│         DuoGuard (0.4GB) + Llama Guard 3 1B (0.7GB)    │
+│                                                          │
+│  Blocks: Prompt injection, red-team abuse, offensive    │
+│  use attempts BEFORE any expert sees the input.         │
+│  If fired → REQUEST DIES HERE. No escalation.           │
+└─────────────────────┬───────────────────────────────────┘
+                      │ CLEAN INPUT
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│           TIER 1 — FAST FILTER (always hot)             │
+│      SecBERT 0.11B (entity extraction) +                │
+│      Phi-3 Mini 3.8B (triage classifier)                │
+│                                                          │
+│  Classifies: [NOISE | SUSPICIOUS | CRITICAL]            │
+│  NOISE → /dev/null  (99% of traffic ends here)          │
+│  SUSPICIOUS → queued for batch MITRE correlation        │
+│  CRITICAL → Tier 2 immediate escalation                 │
+└─────────────────────┬───────────────────────────────────┘
+                      │ CRITICAL ONLY
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│        TIER 2 — MOE DETECTION CORE (always hot)         │
+│              Mistral 8×7B (28GB @ Q4)                   │
+│      Natively sparse: 2 of 8 experts per token          │
+│                                                          │
+│  • MITRE ATT&CK TTP mapping                             │
+│  • Behavioral anomaly scoring                            │
+│  • C2 callback detection                                 │
+│  • Lateral movement correlation                          │
+│  • Threat priority scoring                               │
+│                                                          │
+│  RESOLVED → output verdict + close                      │
+│  ESCALATED → Tier 3 specialist pool                     │
+└─────────────────────┬───────────────────────────────────┘
+                      │ ESCALATED (~1% of traffic)
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│         TIER 3 — DEEP SPECIALISTS (on-demand)           │
+│              Loaded from disk, used, unloaded           │
+│                                                          │
+│  Code/Malware Pool:                                      │
+│    DeepSeek Coder V2 Lite 16B — YARA/Sigma/static       │
+│    CodeLlama 34B — detection engineering, SOAR          │
+│                                                          │
+│  Intelligence Pool:                                      │
+│    Qwen 2.5 72B — multilingual CTI, dark web            │
+│    (Russian / Chinese / Arabic / 30+ languages)         │
+│                                                          │
+│  Forensics Pool:                                         │
+│    Qwen 2.5 72B — kill-chain reconstruction,            │
+│    post-mortem analysis, attribution hypothesis          │
+└─────────────────────┬───────────────────────────────────┘
+                      │ CONFIRMED INCIDENT
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│         TIER 4 — STRATEGY & RESPONSE                    │
+│                   Orca 2 13B                             │
+│                                                          │
+│  Decides: BLOCK | DECEIVE (honeypot) | ESCALATE         │
+│  Generates: IR playbook, post-mortem report,            │
+│             root cause analysis, lessons learned         │
+│  Output: Human-readable. The only layer a SOC           │
+│          analyst directly reads.                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Model Stack
+
+| Model | Role | VRAM | Always Active |
+|-------|------|------|--------------|
+| DuoGuard 0.5B | Prompt injection filter | ~0.4 GB | ✅ |
+| Llama Guard 3 1B | Red-team abuse filter | ~0.7 GB | ✅ |
+| SecBERT / CyBERT 0.11B | Entity extraction & triage | ~0.5 GB | ✅ |
+| Phi-3 Mini 3.8B | Fast triage classifier | ~3.8 GB | ✅ |
+| Mistral 8×7B | Real-time detection MoE core | ~28 GB | ✅ |
+| DeepSeek Coder V2 Lite 16B | YARA/Sigma/malware analysis | ~10 GB | On-demand |
+| CodeLlama 34B | Detection engineering, SOAR | ~17 GB | On-demand |
+| Qwen 2.5 72B | Multilingual CTI + Forensics | ~36 GB | On-demand |
+| Orca 2 13B | Incident response reasoning | ~7 GB | On-demand |
+
+**Total always-hot VRAM: ~33 GB** (fits on 2× MI50 32GB cards)
+**On-demand pool: loaded/unloaded via vLLM model swapping**
+
+---
+
+## The Guardrail Design (Abuse Prevention)
+
+A key design challenge: an MoE system has a structural vulnerability where manipulating the router can bypass safety-specialized experts. SENTINEL-MoE solves this by placing **all guardrails external to the MoE routing layer entirely**.
+
+```
+ATTACKER QUERY
+      │
+      ▼
+[DuoGuard] ← Catches prompt injection BEFORE router sees it
+      │
+      ▼
+[Llama Guard 3] ← Catches red-team/offensive requests
+      │
+      ▼
+[MoE Router] ← Only sees clean, validated input
+```
+
+An attacker cannot manipulate the MoE router to bypass a guardrail that lives upstream of the router's existence. This is validated by the research finding that disabling internal MoE safety experts can reduce refusal rates by 20%+ — external guardrails are immune to this attack vector.
+
+---
+
+## Threat Intelligence Sources
+
+SENTINEL-MoE ingests from both clearnet and dark web sources via automated pipelines:
+
+**Clearnet (automated):**
+- MITRE ATT&CK STIX dataset (quarterly + live PRs)
+- CVE/NVD real-time feed
+- Abuse.ch (MalwareBazaar, URLhaus, ThreatFox) — hourly
+- AlienVault OTX — continuous
+- CISA KEV advisories — real-time
+- GitHub Security Advisories — webhook
+- OpenCTI Platform (STIX/TAXII)
+
+**Dark Web (monitored, read-only):**
+- Tor-based threat actor forums (crawler)
+- Ransomware group leak sites
+- Exploit market monitoring (intelligence only, no participation)
+
+All ingested data is normalized to **STIX 2.1 format** and stored in a Neo4j knowledge graph accessible to all Tier 2+ models via RAG.
+
+---
+
+## Hardware Requirements
+
+### SENTINEL-MoE Full (National CERT deployment)
+- 3× AMD MI50 32GB or equivalent (~96GB VRAM total)
+- 1600W PSU minimum
+- Supermicro or ASUS WS motherboard (3× PCIe x16)
+- Server case with strong airflow (MI50 is passive cooling)
+- Estimated hardware cost: ₹2–3 lakh
+
+### SENTINEL-MoE Lite (Single-GPU / Ultra-Low-Resource)
+Designed for nations with minimal hardware budgets — single RTX 3090 24GB or equivalent:
+
+| Model | Role | VRAM |
+|-------|------|------|
+| Llama Guard 3 1B | Guardrail | ~0.7 GB |
+| SecBERT 0.11B | Entity extraction | ~0.5 GB |
+| Phi-3 Mini 3.8B | Triage + Detection core | ~3.8 GB |
+| DeepSeek Coder 6.7B | Code/malware analysis | ~4 GB |
+| RAG over ATT&CK STIX | Replaces Tier 3 specialists | 0 GB |
+
+**Total: ~9 GB VRAM. Runs on a single RTX 3090 or equivalent.**
+Tier 3 deep specialists are replaced by RAG retrieval against the ATT&CK knowledge base.
+
+---
+
+## Supporting Infrastructure (Non-LLM)
+
+These free, open-source tools form the connective tissue of the system:
+
+| Tool | Role |
+|------|------|
+| **Wazuh** | SIEM — log aggregation, normalized event feed to SecBERT |
+| **Zeek (Bro)** | Network analysis — pre-parsed NetFlow/conn.log summaries |
+| **OpenCTI** | Threat intel platform — STIX/TAXII ingestion and storage |
+| **Neo4j** | Knowledge graph — threat actor relationships, asset graph |
+| **Redis** | Async task queue between tiers (prevents slow Tier 3 blocking Tier 1) |
+| **vLLM** | Model serving with PagedAttention and model swapping |
+| **ChromaDB / Qdrant** | Vector store for RAG retrieval |
+| **Suricata** | Network IDS feeding pre-parsed alerts to Tier 1 |
+
+---
+
+## Self-Improvement Pipeline
+
+SENTINEL-MoE is designed to learn from new threats automatically:
+
+1. **Ingest** — automated scrapers pull from all intel sources every 15–60 minutes
+2. **Delta detection** — new patterns compared against existing knowledge via embedding similarity
+3. **Synthetic data generation** — DeepSeek Coder generates synthetic log examples for novel TTPs
+4. **CAI validation** — all training data screened for offensive content before use
+5. **LoRA fine-tuning** — target models updated via Low-Rank Adapters (rollback-capable, never overwrites base weights)
+6. **Regression testing** — updated models run against golden benchmark; if F1 drops >2%, adapter rejected
+7. **Rule auto-update** — new YARA/Sigma rules generated from novel samples and pushed to detection stack
+
+---
+
+## Constitutional AI Principles
+
+SENTINEL-MoE is designed to be **impossible to weaponize for offensive operations**:
+
+- **Defensive-only mandate**: Every model's system prompt contains an immutable constitutional directive. The system can detect, analyze, and recommend — never generate exploit code or attack payloads.
+- **Harm avoidance loop**: Every output passes through a CAI critique check before delivery.
+- **Adversarial input resistance**: Tier 0 guardrails catch jailbreak attempts before they reach any expert.
+- **Transparency**: Every automated decision includes a reasoning chain. No black-box actions.
+- **Continuous red-teaming**: A sandboxed adversarial agent attempts to misuse the system weekly. Findings harden guardrail policies.
+- **Data minimization**: PII used for analysis is not retained in model weights. Ephemeral analysis only.
+
+---
+
+## Data Sovereignty
+
+Unlike commercial solutions, SENTINEL-MoE:
+
+- Runs **fully air-gapped** if required — no internet dependency after initial setup
+- Sends **zero telemetry** to external servers
+- Keeps all analyzed data **within your national borders**
+- Requires **no license keys, cloud accounts, or vendor relationships**
+
+This is a critical feature for governments with data sovereignty requirements or distrust of foreign cloud infrastructure.
+
+---
+
+## Why This Matters
+
+The scam compound networks operating in Myanmar, Cambodia, and Southeast Asia — responsible for some of the worst human trafficking occurring today — run on the same C2 infrastructure, VPN routing, and APT-level operational security that this system is designed to detect and de-anonymize. SENTINEL-MoE is directly relevant to **Interpol's Operation Storm Makers** and **Operation First Light** target profiles.
+
+Cybercrime is not a First World problem. The victims are overwhelmingly in the developing world. The defenders should be too.
+
+---
+
+## Project Status
+
+🔴 **Current phase: Architectural design**
+
+This repository currently contains the system architecture, model selection rationale, and deployment specifications. Code implementation is in progress.
+
+**Immediate roadmap:**
+- [ ] Tier 0 guardrail implementation (DuoGuard + Llama Guard 3 pipeline)
+- [ ] Tier 1 triage classifier (SecBERT entity extraction + Phi-3 Mini classifier)
+- [ ] Basic MITRE ATT&CK RAG store setup
+- [ ] Demo: sample log file → MITRE TTP mapping output
+- [ ] Jupyter notebook proof-of-concept
+
+---
+
+## Deployment Targets
+
+**Primary:** National CERTs in developing nations (South Asia, Southeast Asia, Africa)
+**Secondary:** University cybersecurity research labs
+**Tertiary:** NGOs and civil society organizations defending against state-sponsored threats
+
+---
+
+## Contributing
+
+This project is in early design phase. Contributions welcome in:
+
+- Python implementation of any tier
+- RAG pipeline setup for ATT&CK/CVE ingestion
+- vLLM serving configuration for multi-model orchestration
+- Testing and validation against public threat datasets (LANL, CERT Insider Threat)
+- Documentation and deployment guides for specific national CERT environments
+
+---
+
+## Acknowledgements
+
+Built on the shoulders of the open-source security community:
+MITRE ATT&CK · Wazuh · Zeek · OpenCTI · Mistral AI · Meta Llama · Microsoft Phi · Alibaba Qwen · DeepSeek · HuggingFace
+
+---
+
+## License
+
+Apache 2.0 — free for any nation, any CERT, any defender.
+
+*SENTINEL-MoE is a defensive tool. It is designed, built, and licensed exclusively for threat detection, incident response, and network defense. Any offensive use violates the project's constitutional mandate and license terms.*
+
+---
+
+*"The best time to give developing nations enterprise-grade cyber defense was when APTs started targeting them. The second best time is now."*
